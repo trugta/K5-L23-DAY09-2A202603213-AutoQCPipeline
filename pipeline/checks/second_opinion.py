@@ -35,10 +35,95 @@ Gợi ý
 - `iou_xywh` có sẵn. Dòng nhãn hỏng không được làm script chết (dùng `ds.valid_boxes` và `parse_yolo_line` trong try).
 - Kết quả phụ thuộc mạnh vào ngưỡng: calibrate chúng ở Bước 3 thay vì đoán.
 """
-from ..common import WARN, Issue, iou_xywh, parse_yolo_line  # noqa: F401
-from ..model_cache import get_preds  # noqa: F401
+from ..common import WARN, Issue, iou_xywh, parse_yolo_line
+from ..model_cache import get_preds
 
 
 def run(ds, cfg, preds=None):
-    # TODO
-    raise NotImplementedError("check second_opinion chưa làm")
+    if preds is None:
+        preds = get_preds(ds, cfg, "checker")
+
+    limits = cfg["second_opinion"]
+    issues = []
+
+    for path in ds.image_files():
+        stem = path.stem
+        lines = ds.read_label_lines(stem)
+
+        if stem not in preds or lines is None:
+            continue
+
+        # Giữ số dòng gốc để chỉ đúng vị trí khi phát hiện box nghi thừa.
+        labels = []
+        for line, text in lines:
+            try:
+                cls, *box = parse_yolo_line(text)
+            except (ValueError, OverflowError):
+                continue
+
+            if 0 <= cls < len(ds.classes) and min(box[2:]) > 0:
+                labels.append((line, cls, box))
+
+        size = ds.image_size(stem)
+
+        # Chiều 1: với mỗi vật model thấy, tìm box nhãn tương ứng.
+        for cls, conf, *box in preds[stem]:
+            if conf < limits["conf"] or size is None:
+                continue
+
+            area_px = box[2] * size[0] * box[3] * size[1]
+            if area_px < limits["min_area_px"]:
+                continue
+
+            matches = [
+                (label_cls, iou_xywh(box, label_box))
+                for _, label_cls, label_box in labels
+            ]
+            best = max((iou for _, iou in matches), default=0)
+            same = max(
+                (iou for label_cls, iou in matches if label_cls == cls),
+                default=0,
+            )
+
+            if best < limits["iou_missing"]:
+                code = "POSSIBLE_MISSING"
+                message = "Model thấy vật chưa có box tương ứng"
+            elif same >= limits["iou_missing"]:
+                if same >= limits["iou_loose"]:
+                    continue
+                code = "POSSIBLE_LOOSE_BOX"
+                message = "Box cùng lớp khớp chưa sát"
+                best = same
+            elif best >= limits["iou_match"]:
+                code = "POSSIBLE_WRONG_CLASS"
+                message = "Box khớp vị trí nhưng khác lớp"
+            else:
+                continue
+
+            issues.append(
+                Issue(
+                    "second_opinion", WARN, code, stem, message,
+                    extra={"conf": conf, "iou": best},
+                )
+            )
+
+        # Chiều 2: với mỗi box nhãn, kiểm tra model có thấy vật ở đó không.
+        # Bước này dùng fp_conf riêng và xét cả các dự đoán nhỏ.
+        candidates = [p[2:] for p in preds[stem] if p[1] >= limits["fp_conf"]]
+
+        for line, _, box in labels:
+            best = max(
+                (iou_xywh(box, candidate) for candidate in candidates),
+                default=0,
+            )
+
+            if best < limits["iou_missing"]:
+                issues.append(
+                    Issue(
+                        "second_opinion", WARN, "POSSIBLE_FALSE_POS", stem,
+                        "Nhãn không khớp dự đoán nào", line, {"iou": best},
+                    )
+                )
+
+    return issues
+
