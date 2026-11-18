@@ -1,0 +1,18 @@
+{
+  "verdict": {
+    "decision": "Hold",
+    "n_errors": 0,
+    "n_warn_images": 38,
+    "n_images": 205,
+    "warn_ratio": 0.1854,
+    "reasons": [
+      "Có 38/205 ảnh còn cảnh báo chưa duyệt, ngưỡng Hold là 10%."
+    ]
+  },
+  "reviewed": 80,
+  "budget": 80,
+  "seconds": 6.4,
+  "exported": "F:\\VIN\\lab9\\K5-L23-DAY09-2A202603213-AutoQCPipeline\\submission\\export\\clean_v1",
+  "config_sha1": "89a0bb4d65b79152d05562aa53d438866e94b794",
+  "review_sim_sha1": "7988ca22827f780a7043a2300490e679a1697154"
+}
