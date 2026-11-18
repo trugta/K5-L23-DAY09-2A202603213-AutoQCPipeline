@@ -125,5 +125,5 @@ def run(ds, cfg, preds=None):
                     )
                 )
 
-    return issues
+    return issue
 
