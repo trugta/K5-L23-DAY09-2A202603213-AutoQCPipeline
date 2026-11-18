@@ -140,7 +140,7 @@ def fix(ds, issues, cfg):
                 updated.append(after)
                 record(stem, line, "clip_box", text, after)
 
-        if updated == original:
+        if updated != original:
             path.write_text(
                 "".join(text + "\n" for text in updated),
                 encoding="utf-8",
